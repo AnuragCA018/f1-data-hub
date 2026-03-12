@@ -1,0 +1,46 @@
+# netlify.toml — Netlify build & routing config for the F1 Data Hub frontend
+# Docs: https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  # Tell Netlify to look inside the frontend/ subdirectory
+  base    = "frontend"
+  command = "npm run build"
+  # Next.js standalone output writes its static export here
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # NEXT_PUBLIC_API_URL is set in Netlify dashboard → Site → Environment vars
+  # so it is never committed to the repo.
+
+# ── Next.js on Netlify requires the @netlify/plugin-nextjs plugin ────────────
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# ── Redirect all SPA routes to Next.js ──────────────────────────────────────
+# The plugin handles this automatically; the rule below is a safety fallback.
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+  force  = false
+
+# ── Security headers ─────────────────────────────────────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options        = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"
+    Permissions-Policy     = "camera=(), microphone=(), geolocation=()"
+
+# ── Cache static assets aggressively ─────────────────────────────────────────
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

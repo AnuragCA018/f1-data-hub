@@ -1,0 +1,9 @@
+# ML / AI prediction dependencies
+# Install these once you're ready to train the race prediction model:
+#   pip install -r requirements-ml.txt
+#
+# Then re-enable the prediction router in main.py (see commented lines).
+
+xgboost>=2.0.0
+scikit-learn>=1.4.0
+joblib>=1.3.0

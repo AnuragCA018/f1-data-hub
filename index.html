@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>F1 Data Hub</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0a0a0f;
+      color: #f0f0f8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .logo {
+      width: 72px; height: 72px;
+      background: #E8002D;
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; font-weight: 900; color: white;
+      margin-bottom: 1.5rem;
+    }
+    h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+    h1 span { color: #E8002D; }
+    p.sub { color: #8892a4; margin-bottom: 2.5rem; font-size: 1.05rem; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem; max-width: 900px; width: 100%;
+      margin-bottom: 2.5rem;
+    }
+    .card {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .card h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+    .card p  { font-size: 0.85rem; color: #8892a4; }
+    .actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600; font-size: 0.95rem;
+      text-decoration: none; cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: #E8002D; color: white; }
+    .btn-secondary { background: #2a2a4a; color: white; }
+    .setup {
+      margin-top: 3rem; max-width: 640px; width: 100%;
+      background: #12121c; border: 1px solid #2a2a4a; border-radius: 12px;
+      padding: 1.5rem;
+    }
+    .setup h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #E8002D; }
+    pre {
+      background: #0a0a0f; border: 1px solid #2a2a4a; border-radius: 8px;
+      padding: 1rem; font-size: 0.82rem; overflow-x: auto;
+      color: #a8e6a8; line-height: 1.6;
+    }
+    .step { margin-bottom: 0.75rem; }
+    .step span { color: #8892a4; font-size: 0.85rem; margin-right: 0.4rem; }
+  </style>
+</head>
+<body>
+  <img src="frontend/public/fdh-logo.png" alt="F1 Data Hub" style="width:80px;height:80px;border-radius:16px;object-fit:cover;margin-bottom:1.5rem;box-shadow:0 0 24px #FF180155" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex'" />
+  <div id="logo-fallback" class="logo" style="display:none">F1</div>
+  <h1><span>F1 Data Hub</span></h1>
+  <p class="sub">Professional Formula 1 data analytics — powered by FastF1 &amp; Next.js</p>
+
+  <div class="cards">
+    <div class="card">
+      <h3>📊 Analytics Dashboard</h3>
+      <p>Championship standings, race calendar, driver stats for seasons 2020–present.</p>
+    </div>
+    <div class="card">
+      <h3>📡 Telemetry Comparison</h3>
+      <p>Compare speed, throttle, brake &amp; gear traces between any two drivers.</p>
+    </div>
+    <div class="card">
+      <h3>🗺 Track Map</h3>
+      <p>GPS racing line visualisation with speed heatmap and lap animation.</p>
+    </div>
+    <div class="card">
+      <h3>⏱ Qualifying Analysis</h3>
+      <p>Sector breakdowns, fastest lap deltas and Q1/Q2/Q3 progression.</p>
+    </div>
+    <div class="card">
+      <h3>🤖 Race Prediction</h3>
+      <p>AI win-probability model (RandomForest) trained on 2020–2024 seasons. Grid position, form, circuit history &amp; more.</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <a href="http://localhost:3000" class="btn btn-primary">🚀 Open Dashboard</a>
+    <a href="http://localhost:8000/docs" class="btn btn-secondary">📖 API Docs</a>
+  </div>
+
+  <div class="setup">
+    <h2>⚙ Quick Start</h2>
+    <div class="step"><span>1.</span>Start the backend:</div>
+    <pre>cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000</pre>
+    <div class="step" style="margin-top:1rem"><span>2.</span>Start the frontend:</div>
+    <pre>cd frontend
+npm install
+npm run dev</pre>
+    <div class="step" style="margin-top:1rem"><span>3.</span>Open the dashboard at <code style="color:#E8002D">http://localhost:3000</code></div>
+    <div class="step" style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #2a2a4a"><span style="color:#E8002D">AI</span> Train the race prediction model (one-time, ~30 min):</div>
+    <pre>cd backend
+python scripts/build_dataset.py
+python scripts/train_model.py</pre>
+    <div class="step" style="margin-top:0.5rem;font-size:0.8rem;color:#8892a4">Downloads FastF1 data for 2020–2024 seasons and trains a RandomForest classifier. Restart the backend after training.</div>
+  </div>
+</body>
+</html>
