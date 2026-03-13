@@ -14,8 +14,17 @@ logger = logging.getLogger(__name__)
 # ─── In-memory session cache ──────────────────────────────────────────────────
 # Keeps FastF1 session objects alive for the server's lifetime so repeated
 # calls for the same race don't re-download the data.
+# This cache is CRITICAL for performance - first load takes 30-60 sec, cached accesses <100ms.
 _session_cache: dict = {}
 _session_lock = threading.Lock()
+
+# ─── Cache statistics ─────────────────────────────────────────────────────────
+# Track cache hits/misses for performance monitoring
+_cache_stats = {
+    "hits": 0,
+    "misses": 0,
+    "load_count": 0,
+}
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +63,40 @@ def _timedelta_seconds(val) -> Optional[float]:
     return _safe_float(val)
 
 
+# ─── Cache statistics & monitoring ────────────────────────────────────────────
+
+def get_cache_stats() -> dict:
+    """Return current cache statistics and size information."""
+    with _session_lock:
+        cache_size = len(_session_cache)
+        stats = _cache_stats.copy()
+        cache_keys = list(_session_cache.keys())
+    
+    hit_rate = stats["hits"] / (stats["hits"] + stats["misses"]) if (stats["hits"] + stats["misses"]) > 0 else 0
+    
+    return {
+        "cache_entries": cache_size,
+        "total_hits": stats["hits"],
+        "total_misses": stats["misses"],
+        "total_loads": stats["load_count"],
+        "hit_rate_percent": round(hit_rate * 100, 1),
+        "cached_sessions": cache_keys,
+    }
+
+
+def clear_session_cache() -> dict:
+    """Clear all cached sessions and reset statistics. Use carefully!"""
+    with _session_lock:
+        cleared_count = len(_session_cache)
+        _session_cache.clear()
+        _cache_stats["hits"] = 0
+        _cache_stats["misses"] = 0
+        _cache_stats["load_count"] = 0
+    
+    logger.warning("⚠️  Session cache cleared (removed %d entries)", cleared_count)
+    return {"cleared_entries": cleared_count, "message": "Cache cleared and statistics reset"}
+
+
 # ─── Schedule ─────────────────────────────────────────────────────────────────
 
 def get_race_schedule(year: int) -> list[dict]:
@@ -74,37 +117,101 @@ def get_race_schedule(year: int) -> list[dict]:
 # ─── Session loading ──────────────────────────────────────────────────────────
 
 def load_f1_session(year: int, race: Any, session_type: str = "R") -> fastf1.core.Session:
-    """Load a FastF1 session (blocking – run in executor for async routes).
+    """
+    Load a FastF1 session (blocking – run in executor for async routes).
     Returns a cached copy if the same session was previously loaded with telemetry.
+    
+    PERFORMANCE:
+    - First load: 30-60 seconds (FastF1 downloads ~100MB from official API)
+    - Cached hits: <100 milliseconds (pure in-memory access)
+    
+    Cache key: (year, round, session_type, has_telemetry)
     """
     cache_key_tel = (year, str(race), session_type, True)
     with _session_lock:
         if cache_key_tel in _session_cache:
+            _cache_stats["hits"] += 1
+            logger.info(
+                "✅ Cache HIT (with telemetry): %s %s %s [hits=%d misses=%d]",
+                year, race, session_type, _cache_stats["hits"], _cache_stats["misses"]
+            )
             return _session_cache[cache_key_tel]
 
     cache_key = (year, str(race), session_type, False)
     with _session_lock:
         if cache_key in _session_cache:
+            _cache_stats["hits"] += 1
+            logger.info(
+                "✅ Cache HIT (basic): %s %s %s [hits=%d misses=%d]",
+                year, race, session_type, _cache_stats["hits"], _cache_stats["misses"]
+            )
             return _session_cache[cache_key]
 
+    # Cache MISS - load from FastF1
+    _cache_stats["misses"] += 1
+    _cache_stats["load_count"] += 1
+    logger.info(
+        "⏳ Cache MISS: Loading FastF1 session %s %s %s [load #%d, hits=%d misses=%d]",
+        year, race, session_type, _cache_stats["load_count"], 
+        _cache_stats["hits"], _cache_stats["misses"]
+    )
+    
     session = fastf1.get_session(year, race, session_type)
     session.load(laps=True, telemetry=False, weather=True, messages=False)
+    
     with _session_lock:
         _session_cache[cache_key] = session
+    
+    logger.info(
+        "✔ Loaded and cached: %s %s %s (basic)",
+        year, race, session_type
+    )
     return session
 
 
 def load_f1_session_with_telemetry(year: int, race: Any, session_type: str = "R") -> fastf1.core.Session:
-    """Load a FastF1 session with telemetry, caching so repeated calls are instant."""
+    """
+    Load a FastF1 session with telemetry, caching so repeated calls are instant.
+    
+    PERFORMANCE:
+    - First load: 45-90 seconds (includes telemetry download)
+    - Cached hits: <100 milliseconds
+    
+    Cache key: (year, round, session_type, True)
+    
+    Note: Once a session is loaded WITH telemetry, future calls for the same
+    session (with or without telemetry) will return the cached version.
+    This is safe because telemetry ⊇ basic data.
+    """
     cache_key = (year, str(race), session_type, True)
     with _session_lock:
         if cache_key in _session_cache:
+            _cache_stats["hits"] += 1
+            logger.info(
+                "✅ Cache HIT (telemetry): %s %s %s [hits=%d misses=%d]",
+                year, race, session_type, _cache_stats["hits"], _cache_stats["misses"]
+            )
             return _session_cache[cache_key]
 
+    # Cache MISS - load from FastF1 with telemetry
+    _cache_stats["misses"] += 1
+    _cache_stats["load_count"] += 1
+    logger.info(
+        "⏳ Cache MISS: Loading FastF1 session WITH TELEMETRY %s %s %s [load #%d, hits=%d misses=%d]",
+        year, race, session_type, _cache_stats["load_count"],
+        _cache_stats["hits"], _cache_stats["misses"]
+    )
+    
     session = fastf1.get_session(year, race, session_type)
     session.load(laps=True, telemetry=True, weather=True, messages=False)
+    
     with _session_lock:
         _session_cache[cache_key] = session
+    
+    logger.info(
+        "✔ Loaded and cached: %s %s %s (with telemetry)",
+        year, race, session_type
+    )
     return session
 
 
@@ -191,6 +298,11 @@ def load_session_for_track(year: int, round_number: int, session_type: str = "Q"
     if session is not None:
         try:
             _ = len(session.laps)   # probe – raises DataNotLoadedError if broken
+            _cache_stats["hits"] += 1
+            logger.info(
+                "✅ Cache HIT (track): %s round %s %s [hits=%d misses=%d]",
+                year, round_number, session_type, _cache_stats["hits"], _cache_stats["misses"]
+            )
             return session
         except Exception:
             logger.warning(
@@ -229,6 +341,13 @@ def load_session_for_track(year: int, round_number: int, session_type: str = "Q"
             return sess
 
         # Attempt 1
+        _cache_stats["misses"] += 1
+        _cache_stats["load_count"] += 1
+        logger.info(
+            "⏳ Cache MISS (track): Loading %s round %s %s [load #%d, hits=%d misses=%d]",
+            year, round_number, session_type, _cache_stats["load_count"],
+            _cache_stats["hits"], _cache_stats["misses"]
+        )
         try:
             session = _fresh_load()
         except Exception as exc:
@@ -245,7 +364,7 @@ def load_session_for_track(year: int, round_number: int, session_type: str = "Q"
         try:
             n = len(session.laps)
             logger.info(
-                "Track: loaded OK - %d laps [%s/%s/%s]",
+                "✔ Track loaded OK - %d laps [%s/%s/%s]",
                 n, year, round_number, session_type,
             )
         except Exception as probe_exc:
@@ -273,6 +392,10 @@ def load_session_for_track(year: int, round_number: int, session_type: str = "Q"
         # Store only after a successful probe.
         with _session_lock:
             _session_cache[cache_key] = session
+        logger.info(
+            "✔ Cached track session: %s round %s %s [cache size: %d]",
+            year, round_number, session_type, len(_session_cache)
+        )
         return session
 
 

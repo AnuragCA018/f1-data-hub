@@ -10,6 +10,7 @@ from api.routes import schedule, results, drivers, laps, telemetry, weather, str
 # prediction router disabled until model is trained — re-enable by uncommenting:
 # from api.routes import prediction
 from services.prewarm_service import prewarm_default_content
+from services import f1_service
 from utils.cache import _cache as api_cache
 
 CACHE_DIR = os.getenv("FASTF1_CACHE_DIR", os.path.join(os.path.dirname(__file__), "cache"))
@@ -75,8 +76,54 @@ def health_check():
     return {"status": "healthy", "cache_entries": len(api_cache)}
 
 
+@app.get("/api/cache/stats", tags=["admin"])
+def get_cache_stats():
+    """
+    Get detailed performance statistics about the FastF1 session cache.
+    
+    Key metrics:
+    - cache_entries: Number of cached FastF1 sessions
+    - total_hits: Number of times cached sessions were reused
+    - total_misses: Number of times sessions had to be loaded from FastF1
+    - hit_rate_percent: Percentage of cache hits (higher is better)
+    - total_loads: Total number of FastF1 load operations
+    
+    Performance notes:
+    - High hit rate (>80%) indicates good cache utilization
+    - Each MISS costs 30-90 seconds (FastF1 download)
+    - Each HIT costs <100ms (in-memory access)
+    """
+    return f1_service.get_cache_stats()
+
+
 @app.post("/api/cache/clear", tags=["admin"])
-def clear_api_cache():
-    """Clear the in-process API response cache (schedule, standings)."""
+def clear_all_caches():
+    """
+    Clear ALL caches:
+    - Session cache (FastF1 sessions)
+    - API response cache (schedule, standings)
+    
+    ⚠️  WARNING: This will force fresh downloads on next request.
+    Use only for testing or if cache is corrupted.
+    """
     api_cache.clear()
-    return {"message": "Cache cleared"}
+    result = f1_service.clear_session_cache()
+    result["api_cache_cleared"] = True
+    return result
+
+
+@app.post("/api/cache/clear-sessions-only", tags=["admin"])
+def clear_session_cache_only():
+    """
+    Clear only the FastF1 session cache (not API response cache).
+    Useful for forcing fresh data downloads while preserving schedule cache.
+    """
+    return f1_service.clear_session_cache()
+
+
+@app.post("/api/cache/clear-api-only", tags=["admin"])
+def clear_api_cache_only():
+    """Clear only the API response cache (schedule, standings)."""
+    api_cache.clear()
+    return {"message": "API cache cleared"}
+
