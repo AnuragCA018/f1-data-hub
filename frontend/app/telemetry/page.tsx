@@ -9,7 +9,7 @@ import ThrottleBrake from "@/components/charts/ThrottleBrake";
 import GearTrace from "@/components/charts/GearTrace";
 import StatCard from "@/components/cards/StatCard";
 
-const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_YEAR = 2024;
 
 /** Shared control input styling */
 const inputCls = "f1-input";

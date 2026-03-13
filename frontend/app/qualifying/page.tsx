@@ -6,7 +6,7 @@ import type { Lap } from "@/types";
 import SectorComparison from "@/components/charts/SectorComparison";
 import { DRIVER_COLORS } from "@/types";
 
-const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_YEAR = 2024;
 
 function fmtTime(sec: number | null) {
   if (!sec) return "—";
@@ -28,13 +28,15 @@ export default function QualifyingPage() {
     setError(null);
     const driverList = drivers.split(",").map((d) => d.trim().toUpperCase()).filter(Boolean);
 
-    Promise.all(driverList.map((d) => fetchLaps(year, race, d, "Q").then((res) => ({ d, laps: res.laps }))))
-      .then((results) => {
-        const map: Record<string, Lap[]> = {};
-        for (const r of results) map[r.d] = r.laps;
-        setDriverLaps(map);
-      })
-      .catch((e) => setError(e.message))
+    (async () => {
+      const map: Record<string, Lap[]> = {};
+      for (const d of driverList) {
+        const res = await fetchLaps(year, race, d, "Q");
+        map[d] = res.laps;
+      }
+      setDriverLaps(map);
+    })()
+      .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }
 

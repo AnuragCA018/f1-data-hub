@@ -1,3 +1,4 @@
+import asyncio
 import os
 import fastf1
 from fastapi import FastAPI
@@ -8,9 +9,10 @@ from database.connection import init_db
 from api.routes import schedule, results, drivers, laps, telemetry, weather, strategy, pitstops
 # prediction router disabled until model is trained — re-enable by uncommenting:
 # from api.routes import prediction
+from services.prewarm_service import prewarm_default_content
 from utils.cache import _cache as api_cache
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+CACHE_DIR = os.getenv("FASTF1_CACHE_DIR", os.path.join(os.path.dirname(__file__), "cache"))
 os.makedirs(CACHE_DIR, exist_ok=True)
 fastf1.Cache.enable_cache(CACHE_DIR)
 
@@ -29,7 +31,12 @@ async def lifespan(app: FastAPI):
     init_db()
     # load_predictor() disabled — re-enable once model is trained
     # from services.prediction_service import load_predictor; load_predictor()
-    yield
+    prewarm_task = asyncio.create_task(prewarm_default_content())
+    try:
+        yield
+    finally:
+        if not prewarm_task.done():
+            prewarm_task.cancel()
 
 
 app = FastAPI(

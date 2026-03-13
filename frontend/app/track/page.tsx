@@ -6,7 +6,7 @@ import type { TrackPositionResponse } from "@/types";
 import { DRIVER_COLORS } from "@/types";
 import TrackMap from "@/components/charts/TrackMap";
 
-const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_YEAR = 2024;
 
 export default function TrackPage() {
   const [year, setYear]       = useState(CURRENT_YEAR);

@@ -18,7 +18,7 @@ import type {
 // the backend URL never appears in client bundles.
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-async function apiFetch<T>(path: string, params?: Record<string, string>, timeoutMs = 30_000): Promise<T> {
+async function apiFetch<T>(path: string, params?: Record<string, string>, timeoutMs = 120_000): Promise<T> {
   const qs = params ? "?" + new URLSearchParams(params).toString() : "";
   const url = `${BASE}${path}${qs}`;
   const controller = new AbortController();
@@ -32,7 +32,11 @@ async function apiFetch<T>(path: string, params?: Record<string, string>, timeou
     return res.json() as Promise<T>;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error(`Request timed out after ${timeoutMs / 1000}s. FastF1 is still downloading session data in the background — try again in a minute.`);
+      throw new Error(
+        `Request timed out after ${timeoutMs / 1000}s. ` +
+        "FastF1 is still downloading session data on first load (Render cold start). " +
+        "Wait 1-2 minutes and refresh."
+      );
     }
     throw err;
   } finally {
@@ -67,7 +71,7 @@ export const fetchLaps = (
 ) =>
   apiFetch<LapsResponse>(`/api/laps/${year}/${race}/${driver}`, {
     session_type: sessionType,
-  });
+  }, 5 * 60 * 1000);
 
 // ─── Telemetry ─────────────────────────────────────────────────────────────────
 export const fetchTelemetry = (
