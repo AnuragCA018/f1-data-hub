@@ -5,8 +5,8 @@
   # Tell Netlify to look inside the frontend/ subdirectory
   base    = "frontend"
   command = "npm run build"
-  # Next.js standalone output writes its static export here
-  publish = ".next"
+  # Next.js static export writes to out/ folder (not .next which is just cache)
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "20"

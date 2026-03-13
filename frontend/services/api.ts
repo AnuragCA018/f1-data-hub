@@ -13,10 +13,18 @@ import type {
   PredictionResponse,
 } from "@/types";
 
-// When NEXT_PUBLIC_API_URL is unset the app relies on Next.js rewrites
-// (next.config.js proxies /api/* → http://localhost:8000/api/*) so that
-// the backend URL never appears in client bundles.
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+// ⚠️  This project uses Next.js static export (output: "export" in next.config.js).
+// Static sites cannot use Next.js rewrites — they have no server!
+// Therefore: NEXT_PUBLIC_API_URL MUST be set to the backend URL.
+// If not set, all API requests will fail (404 or timeout).
+const BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+if (!BASE) {
+  console.error(
+    "❌ FATAL: NEXT_PUBLIC_API_URL not set. Frontend cannot reach backend API. " +
+    "Set NEXT_PUBLIC_API_URL=https://f1-data-hub-kfhe.onrender.com in environment variables."
+  );
+}
 
 async function apiFetch<T>(path: string, params?: Record<string, string>, timeoutMs = 120_000): Promise<T> {
   const qs = params ? "?" + new URLSearchParams(params).toString() : "";
