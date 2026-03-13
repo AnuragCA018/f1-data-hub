@@ -73,7 +73,7 @@ export default function HomePage() {
             <span style={{ color: "#FF1801" }}>F1</span>{" "}
             <span className="text-white">Analytics</span>
           </h1>
-          <p className="page-subtitle mt-1">Formula 1 performance data · seasons 2020 – 2026</p>
+          <p className="page-subtitle mt-1">Formula 1 performance data · seasons 2020 – 2024</p>
         </div>
         <select
           value={year}
@@ -81,7 +81,7 @@ export default function HomePage() {
           className="f1-select w-auto shrink-0"
           style={{ minWidth: "130px" }}
         >
-          {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => (
+          {[2020, 2021, 2022, 2023, 2024].map((y) => (
             <option key={y} value={y}>{y} Season</option>
           ))}
         </select>
