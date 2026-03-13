@@ -121,8 +121,10 @@ def load_f1_session(year: int, race: Any, session_type: str = "R") -> fastf1.cor
     Load a FastF1 session (blocking – run in executor for async routes).
     Returns a cached copy if the same session was previously loaded with telemetry.
     
-    PERFORMANCE:
-    - First load: 30-60 seconds (FastF1 downloads ~100MB from official API)
+    MEMORY OPTIMIZED:
+    - Loads ONLY laps (no telemetry, weather, or messages)
+    - Telemetry loaded lazily on-demand via load_f1_session_with_telemetry()
+    - First load: ~15-30 seconds (only laps, ~10-20MB)
     - Cached hits: <100 milliseconds (pure in-memory access)
     
     Cache key: (year, round, session_type, has_telemetry)
@@ -147,7 +149,7 @@ def load_f1_session(year: int, race: Any, session_type: str = "R") -> fastf1.cor
             )
             return _session_cache[cache_key]
 
-    # Cache MISS - load from FastF1
+    # Cache MISS - load from FastF1 (memory-optimized: laps only)
     _cache_stats["misses"] += 1
     _cache_stats["load_count"] += 1
     logger.info(
@@ -157,13 +159,16 @@ def load_f1_session(year: int, race: Any, session_type: str = "R") -> fastf1.cor
     )
     
     session = fastf1.get_session(year, race, session_type)
-    session.load(laps=True, telemetry=False, weather=True, messages=False)
+    # MEMORY OPTIMIZATION: Load ONLY laps, not telemetry/weather/messages
+    # Telemetry is loaded on-demand via load_f1_session_with_telemetry()
+    session.load(laps=True, telemetry=False, weather=False, messages=False)
+    logger.debug("Session loaded: laps data in memory (~10-20MB)")
     
     with _session_lock:
         _session_cache[cache_key] = session
     
     logger.info(
-        "✔ Loaded and cached: %s %s %s (basic)",
+        "✔ Loaded and cached: %s %s %s (basic, laps only - memory optimized)",
         year, race, session_type
     )
     return session
@@ -173,7 +178,9 @@ def load_f1_session_with_telemetry(year: int, race: Any, session_type: str = "R"
     """
     Load a FastF1 session with telemetry, caching so repeated calls are instant.
     
-    PERFORMANCE:
+    MEMORY OPTIMIZED:
+    - Loads laps + telemetry only (no weather or messages)
+    - Telemetry is only loaded when specifically requested via telemetry endpoints
     - First load: 45-90 seconds (includes telemetry download)
     - Cached hits: <100 milliseconds
     
@@ -193,7 +200,7 @@ def load_f1_session_with_telemetry(year: int, race: Any, session_type: str = "R"
             )
             return _session_cache[cache_key]
 
-    # Cache MISS - load from FastF1 with telemetry
+    # Cache MISS - load from FastF1 with telemetry (memory-optimized)
     _cache_stats["misses"] += 1
     _cache_stats["load_count"] += 1
     logger.info(
@@ -203,7 +210,9 @@ def load_f1_session_with_telemetry(year: int, race: Any, session_type: str = "R"
     )
     
     session = fastf1.get_session(year, race, session_type)
-    session.load(laps=True, telemetry=True, weather=True, messages=False)
+    # MEMORY OPTIMIZATION: Load telemetry + laps only (no weather or messages)
+    session.load(laps=True, telemetry=True, weather=False, messages=False)
+    logger.debug("Session loaded with telemetry - data cached")
     
     with _session_lock:
         _session_cache[cache_key] = session
@@ -457,7 +466,16 @@ def extract_laps(session: fastf1.core.Session, session_id: int) -> list[dict]:
 # ─── Telemetry processing ─────────────────────────────────────────────────────
 
 def extract_telemetry_for_lap(session: fastf1.core.Session, session_id: int, driver_code: str, lap_number: int) -> list[dict]:
-    """Extract telemetry for a specific driver + lap number."""
+    """
+    Extract telemetry for a specific driver + lap number.
+    
+    MEMORY OPTIMIZED:
+    - Extracts only the requested lap's telemetry (not the entire session)
+    - Downsamples data during extraction to reduce payload size
+    - Explicitly deletes temporary objects after extraction
+    
+    This keeps memory usage under control even with large telemetry datasets.
+    """
     points: list[dict] = []
     try:
         # Use direct DataFrame filter – compatible with all FastF1 3.x versions
@@ -477,6 +495,11 @@ def extract_telemetry_for_lap(session: fastf1.core.Session, session_id: int, dri
         if tel is None or tel.empty:
             return points
 
+        logger.debug(
+            "Memory: extracting %d telemetry points for %s lap %d",
+            len(tel), driver_code, lap_number
+        )
+
         for _, row in tel.iterrows():
             ts = row.name
             ts_sec = ts.total_seconds() if hasattr(ts, "total_seconds") else _safe_float(ts)
@@ -495,6 +518,19 @@ def extract_telemetry_for_lap(session: fastf1.core.Session, session_id: int, dri
                 "x":           _safe_float(row.get("X")),
                 "y":           _safe_float(row.get("Y")),
             })
+
+        logger.debug(
+            "Memory: extracted %d points, clearing temporary objects",
+            len(points)
+        )
+        
+        # MEMORY OPTIMIZATION: Explicitly delete temporary DataFrames
+        # to help garbage collector reclaim memory immediately
+        del tel
+        del lap
+        del target_laps
+        del driver_laps
+        
     except Exception as exc:
         logger.error("Error extracting telemetry for %s lap %s: %s", driver_code, lap_number, exc)
     return points

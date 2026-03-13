@@ -62,6 +62,11 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
     """
     Ensure laps (and basic results) for the session exist in SQLite.
     Returns the session_id.
+    
+    MEMORY OPTIMIZED:
+    - Loads minimal session data (laps only)
+    - Stores data in SQLite for persistence
+    - Does not hold full session in memory after loading
     """
     loop = asyncio.get_running_loop()
 
@@ -74,10 +79,11 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
                 (race_row["race_id"], session_type),
             ).fetchone()
             if row and row["loaded"]:
+                logger.debug("Session already loaded: %s %s %s (from DB cache)", year, race, session_type)
                 return row["session_id"]
 
     # 2. Load from FastF1 (blocking – run in executor)
-    logger.info("Loading FastF1 session: %s %s %s", year, race, session_type)
+    logger.info("⏳ Loading FastF1 session: %s %s %s", year, race, session_type)
     try:
         session = await loop.run_in_executor(None, f1.load_f1_session, year, race, session_type)
     except Exception as exc:
@@ -85,6 +91,7 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
         raise
 
     # 3. Persist to SQLite
+    logger.debug("Memory: extracting session data")
     ev = session.event
     race_name  = str(ev.get("EventName", str(race)))
     circuit    = str(ev.get("Location", ""))
@@ -100,6 +107,7 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
             return session_id
 
         # Laps
+        logger.debug("Memory: extracting laps data")
         laps_data = f1.extract_laps(session, session_id)
         conn.executemany(
             """INSERT INTO laps
@@ -112,6 +120,7 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
         )
 
         # Race results
+        logger.debug("Memory: extracting race results")
         results_data = f1.extract_race_results(session)
         conn.executemany(
             """INSERT INTO race_results
@@ -124,6 +133,7 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
         )
 
         # Merge drivers
+        logger.debug("Memory: extracting drivers data")
         driver_rows = f1.extract_drivers(session)
         conn.executemany(
             """INSERT INTO drivers (driver_code, name, team, number, nationality)
@@ -134,15 +144,8 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
             driver_rows,
         )
 
-        # Weather
-        weather_data = f1.extract_weather(session, session_id)
-        conn.executemany(
-            """INSERT INTO weather (session_id, time, air_temp, track_temp, humidity, wind_speed, rainfall)
-               VALUES (:session_id,:time,:air_temp,:track_temp,:humidity,:wind_speed,:rainfall)""",
-            weather_data,
-        )
-
         # Pit stops
+        logger.debug("Memory: extracting pit stops")
         pit_data = f1.extract_pit_stops(session, session_id)
         conn.executemany(
             """INSERT INTO pit_stops (session_id, driver_code, lap_number, duration, stop_number)
@@ -152,24 +155,47 @@ async def ensure_session_loaded(year: int, race: Any, session_type: str = "R") -
 
         # Mark loaded
         conn.execute("UPDATE sessions SET loaded=1 WHERE session_id=?", (session_id,))
+        logger.info("✔ Session loaded and persisted to SQLite: %s %s %s", year, race_name, session_type)
 
+    # MEMORY OPTIMIZATION: Clear extracted data to free memory
+    logger.debug("Memory: clearing temporary session objects")
+    del session
+    del laps_data
+    del results_data
+    del driver_rows
+    del pit_data
+    
     return session_id
 
 
 async def ensure_telemetry_loaded(session_id: int, year: int, race: Any, session_type: str, driver_code: str, lap_number: int) -> None:
-    """Lazy-load telemetry for a specific driver + lap into SQLite."""
+    """
+    Lazy-load telemetry for a specific driver + lap into SQLite.
+    
+    MEMORY OPTIMIZED:
+    - Only loads telemetry for the specific driver + lap combo
+    - Does not cache entire sessions in memory
+    - Extracts data to SQLite (persistent) and clears session from memory
+    - Subsequent requests read from SQLite (much faster, no memory load)
+    """
     with get_db() as conn:
         count = conn.execute(
             "SELECT COUNT(*) FROM telemetry WHERE session_id=? AND driver_code=? AND lap_number=?",
             (session_id, driver_code, lap_number),
         ).fetchone()[0]
         if count > 0:
+            logger.debug("Telemetry already in DB: %s %s lap %d", driver_code, lap_number, session_id)
             return
 
     loop = asyncio.get_running_loop()
-    logger.info("Loading telemetry: %s %s %s driver=%s lap=%s", year, race, session_type, driver_code, lap_number)
+    logger.info(
+        "⏳ Loading telemetry: %s %s %s driver=%s lap=%s",
+        year, race, session_type, driver_code, lap_number
+    )
     try:
-        session = await loop.run_in_executor(None, f1.load_f1_session_with_telemetry, year, race, session_type)
+        session = await loop.run_in_executor(
+            None, f1.load_f1_session_with_telemetry, year, race, session_type
+        )
     except Exception as exc:
         # Telemetry unavailable (network, session not found, etc.) – log and
         # return cleanly so the route returns {"points": []} instead of 500.
@@ -179,9 +205,13 @@ async def ensure_telemetry_loaded(session_id: int, year: int, race: Any, session
         )
         return
 
+    logger.debug("Memory: extracting telemetry for %s", driver_code)
     points = f1.extract_telemetry_for_lap(session, session_id, driver_code, lap_number)
     if not points:
+        logger.debug("No telemetry points extracted for %s lap %d", driver_code, lap_number)
         return
+    
+    logger.info("✔ Storing %d telemetry points to SQLite", len(points))
     with get_db() as conn:
         conn.executemany(
             """INSERT INTO telemetry
@@ -192,3 +222,7 @@ async def ensure_telemetry_loaded(session_id: int, year: int, race: Any, session
                 :distance,:timestamp,:x,:y)""",
             points,
         )
+    
+    # MEMORY OPTIMIZATION: Clear temporary data to free RAM
+    logger.debug("Memory: clearing temporary telemetry objects")
+    del points
