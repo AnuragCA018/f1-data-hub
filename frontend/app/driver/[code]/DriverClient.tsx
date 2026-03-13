@@ -84,7 +84,7 @@ export default function DriverClient() {
             onChange={(e) => setYear(Number(e.target.value))}
             className="f1-select w-auto"
           >
-            {[2020, 2021, 2022, 2023, 2024].map((y) => (
+            {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>

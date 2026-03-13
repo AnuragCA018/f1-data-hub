@@ -47,16 +47,33 @@ export default function HomePage() {
   const [constrS, setConstrS]     = useState<ConstructorStanding[]>([]);
   const [loading, setLoading]     = useState(true);
   const [year, setYear]           = useState(CURRENT_YEAR);
+  const [error, setError]         = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchSchedule(year), fetchStandings(year)])
-      .then(([sched, standings]) => {
-        setSchedule(sched.races);
-        setDriverS(standings.driver_standings);
-        setConstrS(standings.constructor_standings);
+    setError(null);
+    Promise.allSettled([fetchSchedule(year), fetchStandings(year)])
+      .then(([schedResult, standingsResult]) => {
+        if (schedResult.status === "fulfilled") {
+          setSchedule(schedResult.value.races);
+        } else {
+          setSchedule([]);
+        }
+
+        if (standingsResult.status === "fulfilled") {
+          setDriverS(standingsResult.value.driver_standings);
+          setConstrS(standingsResult.value.constructor_standings);
+        } else {
+          setDriverS([]);
+          setConstrS([]);
+        }
+
+        if (schedResult.status === "rejected" && standingsResult.status === "rejected") {
+          setError("Data for this season is not available yet. Try 2024 or earlier.");
+        } else if (schedResult.status === "rejected" || standingsResult.status === "rejected") {
+          setError("Some data for this season is still unavailable.");
+        }
       })
-      .catch(console.error)
       .finally(() => setLoading(false));
   }, [year]);
 
@@ -73,7 +90,7 @@ export default function HomePage() {
             <span style={{ color: "#FF1801" }}>F1</span>{" "}
             <span className="text-white">Analytics</span>
           </h1>
-          <p className="page-subtitle mt-1">Formula 1 performance data · seasons 2020 – 2024</p>
+          <p className="page-subtitle mt-1">Formula 1 performance data · seasons 2020 – 2026</p>
         </div>
         <select
           value={year}
@@ -81,11 +98,18 @@ export default function HomePage() {
           className="f1-select w-auto shrink-0"
           style={{ minWidth: "130px" }}
         >
-          {[2020, 2021, 2022, 2023, 2024].map((y) => (
+          {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => (
             <option key={y} value={y}>{y} Season</option>
           ))}
         </select>
       </div>
+
+      {error && (
+        <div className="rounded-xl p-4 text-sm"
+          style={{ background: "#FF180110", border: "1px solid #FF180130", color: "#D1D5DB" }}>
+          {error}
+        </div>
+      )}
 
       {/* â”€â”€ Stat Cards â”€â”€ */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

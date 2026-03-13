@@ -66,7 +66,7 @@ export default function TelemetryPage() {
           <div>
             <label className="data-label block mb-1.5">Year</label>
             <select value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
-              {[2020,2021,2022,2023,2024].map((y) => <option key={y}>{y}</option>)}
+              {[2020,2021,2022,2023,2024,2025,2026].map((y) => <option key={y}>{y}</option>)}
             </select>
           </div>
           <div>

@@ -6,7 +6,7 @@ import type { PredictionResponse, RaceEvent } from "@/types";
 import PredictionPanel from "@/components/cards/PredictionPanel";
 
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = [2024, 2023, 2022, 2021, 2020];
+const YEARS = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018];
 
 export default function PredictionPage() {
   const [year, setYear]       = useState(CURRENT_YEAR);
